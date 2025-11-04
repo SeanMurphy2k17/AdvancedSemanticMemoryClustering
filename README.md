@@ -1,6 +1,6 @@
 # 🧠 Advanced Semantic Memory Clustering (ASMC)
 
-**A two-layer semantic memory system for AI consciousness applications**
+**A two-layer semantic memory system for AI cognition applications**
 
 Built by Sean Murphy | MIT License
 
@@ -182,8 +182,8 @@ python -c "import nltk; nltk.download('sentiwordnet'); nltk.download('wordnet')"
 
 ## Use Cases
 
-### 1. **AI Consciousness Research**
-Create AI agents with genuine episodic + semantic memory
+### 1. **AI Cognition Research**
+Create AI agents with genuine episodic + semantic memory for learning and adaptation
 
 ### 2. **Conversational AI**
 Give chatbots personality through persistent memory
@@ -238,7 +238,7 @@ If you use this in research, please cite:
 
 ```
 Murphy, S. (2024). Advanced Semantic Memory Clustering: 
-A Two-Layer Semantic Memory System for AI Consciousness Applications.
+A Two-Layer Semantic Memory System for AI Cognition Applications.
 GitHub: https://github.com/YourUsername/AdvancedSemanticMemoryClustering
 ```
 
