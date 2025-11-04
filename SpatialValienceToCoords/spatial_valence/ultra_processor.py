@@ -183,9 +183,9 @@ class UltraLexicalAnalyzer:
             'digit_ratio': sum(1 for c in text if c.isdigit()) / max(len(text), 1),
             'special_char_ratio': sum(1 for c in text if not c.isalnum() and not c.isspace()) / max(len(text), 1),
             
-            # N-gram features
-            'bigrams': self._extract_ngrams(words, 2),
-            'trigrams': self._extract_ngrams(words, 3),
+            # N-gram features (top 10 only to reduce memory bloat)
+            'bigrams': self._extract_ngrams(words, 2)[:10],
+            'trigrams': self._extract_ngrams(words, 3)[:10],
             'bigram_entropy': self._calculate_ngram_entropy(words, 2),
             
             # Semantic richness
@@ -375,11 +375,17 @@ class UltraSyntacticAnalyzer:
         # Analyze sentence structure
         features.update(self._analyze_sentence_structure(text))
         
-        # Extract dependencies
-        features['dependencies'] = self._extract_dependencies(text)
+        # Extract dependencies (for complexity calculation)
+        dependencies = self._extract_dependencies(text)
+        features['dependencies'] = dependencies  # Temporarily for calculation
         
         # Grammatical complexity
         features['grammatical_complexity'] = self._calculate_complexity(text, features)
+        
+        # CLEANUP: Keep only top 10 dependencies (reduce memory bloat)
+        # Store count + representative sample instead of full list
+        features['dependency_count'] = len(dependencies)
+        features['dependencies'] = dependencies[:10] if dependencies else []  # Top 10 only
         
         return features
     
@@ -488,8 +494,9 @@ class UltraSyntacticAnalyzer:
         complexity += min(features.get('clause_count', 1) * 0.1, 0.3)
         complexity += min(features.get('phrase_count', 0) * 0.05, 0.2)
         
-        # Dependency complexity
-        complexity += min(len(features.get('dependencies', [])) * 0.05, 0.3)
+        # Dependency complexity (use count field, not array length)
+        dep_count = features.get('dependency_count', len(features.get('dependencies', [])))
+        complexity += min(dep_count * 0.05, 0.3)
         
         return min(complexity, 1.0)
 
@@ -533,10 +540,14 @@ class UltraSemanticExtractor:
         """Extract ultra-detailed semantic features"""
         words = text.lower().split()
         
+        # Extract concepts (returns tuple: trimmed_dict, original_count)
+        concepts_dict, concept_count = self._extract_concepts(words)
+        
         features = {
             # Concept analysis
-            'concepts': self._extract_concepts(words),
-            'concept_density': 0.0,
+            'concepts': concepts_dict,
+            'concept_count': concept_count,  # Store full count for accurate density
+            'concept_density': concept_count / max(len(words), 1),  # Use full count
             
             # Semantic categories
             'categories': self._categorize_semantics(words),
@@ -563,13 +574,10 @@ class UltraSemanticExtractor:
             'semantic_vector': self._create_semantic_vector(words)
         }
         
-        # Calculate concept density
-        features['concept_density'] = len(features['concepts']) / max(len(words), 1)
-        
         return features
     
-    def _extract_concepts(self, words: List[str]) -> Dict[str, float]:
-        """Extract and score concepts"""
+    def _extract_concepts(self, words: List[str]) -> tuple:
+        """Extract and score concepts (top 20 only to reduce bloat)"""
         concepts = defaultdict(float)
         
         for word in words:
@@ -588,7 +596,15 @@ class UltraSemanticExtractor:
             for concept in concepts:
                 concepts[concept] /= total
         
-        return dict(concepts)
+        # Store count before trimming (for density calculation)
+        concept_count = len(concepts)
+        
+        # Keep only top 20 concepts by score (reduce memory bloat)
+        sorted_concepts = sorted(concepts.items(), key=lambda x: x[1], reverse=True)
+        trimmed_concepts = dict(sorted_concepts[:20])
+        
+        # Return both trimmed dict and original count
+        return trimmed_concepts, concept_count
     
     def _categorize_semantics(self, words: List[str]) -> Dict[str, Dict[str, float]]:
         """Categorize words into semantic categories"""
@@ -728,31 +744,37 @@ class UltraSemanticExtractor:
         return detected_frames
     
     def _analyze_relationships(self, words: List[str]) -> Dict[str, List[Tuple[str, str]]]:
-        """Analyze semantic relationships between words"""
-        relationships = {
-            'synonyms': [],
-            'antonyms': [],
-            'related': []
-        }
+        """Analyze semantic relationships between words (top 10 only to reduce bloat)"""
+        synonyms = []
+        antonyms = []
+        related_scored = []  # Store with scores for sorting
         
-        # Find synonyms
+        # Find relationships with scores
         for i, word1 in enumerate(words):
             for j, word2 in enumerate(words[i+1:], i+1):
                 if self.kb.get_concept(word1) == self.kb.get_concept(word2) and word1 != word2:
-                    relationships['synonyms'].append((word1, word2))
+                    synonyms.append((word1, word2))
                 
                 # Check for antonyms
                 if self.kb.get_antonym(word1) == word2:
-                    relationships['antonyms'].append((word1, word2))
+                    antonyms.append((word1, word2))
                 
-                # Check semantic similarity
+                # Check semantic similarity (score for sorting)
                 vec1 = self.kb.get_word_vector(word1)
                 vec2 = self.kb.get_word_vector(word2)
                 similarity = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2) + 1e-8)
                 if similarity > 0.7 and word1 != word2:
-                    relationships['related'].append((word1, word2))
+                    related_scored.append((similarity, (word1, word2)))
         
-        return relationships
+        # Sort by similarity and keep top 10
+        related_scored.sort(reverse=True, key=lambda x: x[0])
+        related = [pair for _, pair in related_scored[:10]]
+        
+        return {
+            'synonyms': synonyms[:10],  # Top 10 synonyms
+            'antonyms': antonyms[:10],  # Top 10 antonyms
+            'related': related           # Top 10 related (already limited)
+        }
     
     def _extract_topics(self, words: List[str], lexical_features: Dict) -> List[str]:
         """Extract main topics using clustering"""
