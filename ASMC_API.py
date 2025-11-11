@@ -56,6 +56,7 @@ class AdvancedSemanticMemory:
             max_entries=max_stm_entries,
             save_interval=30,
             data_directory="./asmc_stm_data",
+            ltm_db_path=ltm_db_path,
             verbose=verbose
         )
         

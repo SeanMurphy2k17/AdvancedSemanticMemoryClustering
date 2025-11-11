@@ -58,6 +58,7 @@ class SemanticSTM_API:
                  max_entries: int = 100,
                  save_interval: int = 30,
                  data_directory: str = None,
+                 ltm_db_path: str = None,
                  verbose: bool = False):
         """
         Initialize the Semantic STM API
@@ -84,6 +85,7 @@ class SemanticSTM_API:
         self._stm = SemanticSTMManager(
             max_entries=max_entries,
             save_interval=save_interval,
+            ltm_db_path=ltm_db_path,
             verbose=verbose
         )
         
@@ -559,6 +561,7 @@ class SemanticSTM_API:
 def create_stm_api(max_entries: int = 100, 
                    save_interval: int = 30,
                    data_directory: str = None,
+                   ltm_db_path: str = None,
                    verbose: bool = False) -> SemanticSTM_API:
     """
     Quick factory function to create STM API instance
@@ -576,6 +579,7 @@ def create_stm_api(max_entries: int = 100,
         max_entries=max_entries,
         save_interval=save_interval,
         data_directory=data_directory,
+        ltm_db_path=ltm_db_path,
         verbose=verbose
     )
 

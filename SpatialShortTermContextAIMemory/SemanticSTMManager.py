@@ -60,7 +60,7 @@ class SemanticSTMManager:
     for semantic search and context building.
     """
     
-    def __init__(self, max_entries=100, save_interval=30, verbose=True):
+    def __init__(self, max_entries=100, save_interval=30, ltm_db_path=None, verbose=True):
         """
         Initialize the Semantic STM Manager
         
@@ -72,6 +72,7 @@ class SemanticSTMManager:
         self.max_entries = max_entries
         self.save_interval = save_interval
         self.verbose = verbose
+        self.ltm_db_path = ltm_db_path or "DigitalEngramEdgeV2/CoreData.lmdb"
         
         # PRIMARY: RAM storage for blazing speed
         self.stm_entries = {}  # coord_key -> STMEntry
@@ -416,7 +417,7 @@ class SemanticSTMManager:
         
         # Initialize EngramManager if needed (lazy loading)
         if self.engram_manager is None:
-            self.engram_manager = EngramManager(verbose=False)
+            self.engram_manager = EngramManager(db_path=self.ltm_db_path, verbose=False)
         
         # Get oldest entry
         oldest_key = self.entry_order.pop(0)
