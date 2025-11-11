@@ -465,7 +465,6 @@ class SemanticSTMManager:
             # Determine target file
             target_file = self.save_file_a if self.current_save_target == 'A' else self.save_file_b
             
-            # Prepare save data with metadata
             save_data = {
                 'save_timestamp': time.time(),
                 'save_datetime': datetime.now().isoformat(),
@@ -474,8 +473,8 @@ class SemanticSTMManager:
                 'max_entries': self.max_entries,
                 'save_interval': self.save_interval,
                 'stats': self.stats.copy(),
-                'stm_entries': self.stm_entries,
-                'entry_order': self.entry_order
+                'stm_entries': self.stm_entries.copy(),  # Thread-safe copy
+                'entry_order': self.entry_order.copy()   # Thread-safe copy
             }
             
             # Ensure directory exists
