@@ -380,6 +380,10 @@ class SemanticSTMManager:
         ltm_semantic_matches = []
         ltm_spatial_neighbors = []
         
+        # Initialize EngramManager if needed (lazy load for queries)
+        if self.engram_manager is None and self.ltm_db_path:
+            self.engram_manager = EngramManager(db_path=self.ltm_db_path, verbose=False)
+        
         if self.engram_manager:
             # Layer 2A: Semantic matches (what this MEANS)
             try:
