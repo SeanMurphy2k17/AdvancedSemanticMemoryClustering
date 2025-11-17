@@ -1619,6 +1619,21 @@ class UltraEnhancedSpatialValenceToCoordGeneration:
         self.depth = depth
         self.total_processed = 0
     
+    def _extract_hashable_keys(self, features: Dict) -> list:
+        """Extract only hashable string keys from features for semantic matching"""
+        keys = []
+        
+        # Extract string lists from features
+        if 'bigrams' in features and isinstance(features['bigrams'], list):
+            keys.extend(features['bigrams'])
+        if 'trigrams' in features and isinstance(features['trigrams'], list):
+            keys.extend(features['trigrams'])
+        if 'key_terms' in features and isinstance(features['key_terms'], list):
+            keys.extend(features['key_terms'])
+        
+        # Filter to only strings (skip any non-string elements)
+        return [k for k in keys if isinstance(k, str)]
+    
     def process(self, text: str, context: Optional[str] = None) -> Dict:
         """Process text with ultra-robust semantic analysis"""
         result = self.processor.encode(text, context)
@@ -1629,7 +1644,7 @@ class UltraEnhancedSpatialValenceToCoordGeneration:
         return {
             'input': result['text'],
             'summary': result['summary'],
-            'semantic_keys': result.get('features', {}),
+            'semantic_keys': self._extract_hashable_keys(result.get('features', {})),
             'coordinates': result['coordinates'],
             'coordinate_key': result['coordinate_key'],
             'processing_time': 0.002,  # Ultra-fast

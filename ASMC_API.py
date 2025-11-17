@@ -107,7 +107,10 @@ class AdvancedSemanticMemory:
         )
         
         coord_key = result.get('coordinate_key')
-        
+        print(f"[DEBUG] STM returned: {result}")  # <-- ADD THIS
+        print(f"[DEBUG] result.keys(): {result.keys() if result else 'None'}")  # <-- AND THIS
+        coord_key = result.get('coordinate_key')
+        print(f"[DEBUG] coord_key: {coord_key}")  # <-- AND THIS
         # SCM Integration: If spatial anchor provided, link memory to location
         if self.scm and spatial_anchor and coord_key:
             try:
