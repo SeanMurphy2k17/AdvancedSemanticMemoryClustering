@@ -53,6 +53,7 @@ class AdvancedSemanticMemory:
         self.ltm_db_path = ltm_db_path
         self.verbose = verbose
         self.enable_scm = enable_scm
+        self.scm_log_path = "./scm_data/scm_operations.log"
         
         # Initialize STM (which handles SVC and LTM internally)
         self._stm_api = create_stm_api(
@@ -76,6 +77,23 @@ class AdvancedSemanticMemory:
             if enable_scm:
                 print(f"   🗺️ Spatial Comprehension Map: ENABLED")
     
+    def _log_scm_operation(self, operation_type: str, details: dict):
+        """Log SCM operations to file for diagnostics"""
+        if not self.enable_scm:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.scm_log_path), exist_ok=True)
+            with open(self.scm_log_path, 'a', encoding='utf-8') as f:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                f.write(f"[{timestamp}] {operation_type}\n")
+                for key, value in details.items():
+                    f.write(f"  {key}: {value}\n")
+                f.write("\n")
+        except Exception as e:
+            if self.verbose:
+                print(f"[ASMC] SCM log error: {e}")
+    
     def add_experience(self, situation: str, response: str, 
                       thought: str = "", objective: str = "", action: str = "", result: str = "",
                       spatial_anchor: dict = None, metadata: dict = None):
@@ -95,8 +113,17 @@ class AdvancedSemanticMemory:
         Returns:
             Dict: Storage result with coordinate information
         """
-        # Store in STM (9D semantic clustering)
-        result = self._stm_api.add_conversation(
+        # Generate coordinate directly for SCM (bypass STM return issues)
+        from spatial_valence import UltraEnhancedSpatialValenceToCoordGeneration
+        coord_gen = UltraEnhancedSpatialValenceToCoordGeneration()
+        full_context = f"User: {situation}\nAI: {response}"
+        coord_result = coord_gen.process(full_context)
+        coord_key = coord_result.get('coordinate_key')
+        print(f"[ASMC DEBUG] Generated coord_key: {coord_key}")
+        print(f"[ASMC DEBUG] spatial_anchor present: {spatial_anchor is not None}")
+        
+        # Still store in STM (let it do its internal thing)
+        stm_result = self._stm_api.add_conversation(
             user_message=situation,
             ai_response=response,
             thought=thought,
@@ -105,12 +132,6 @@ class AdvancedSemanticMemory:
             result=result,
             metadata=metadata
         )
-        
-        coord_key = result.get('coordinate_key')
-        print(f"[DEBUG] STM returned: {result}")  # <-- ADD THIS
-        print(f"[DEBUG] result.keys(): {result.keys() if result else 'None'}")  # <-- AND THIS
-        coord_key = result.get('coordinate_key')
-        print(f"[DEBUG] coord_key: {coord_key}")  # <-- AND THIS
         # SCM Integration: If spatial anchor provided, link memory to location
         if self.scm and spatial_anchor and coord_key:
             try:
@@ -152,15 +173,34 @@ class AdvancedSemanticMemory:
                 # Link STM memory to SCM node
                 self.scm.link_stm_memory(node_key, coord_key, valence)
                 
-                # Add SCM info to result
-                result['scm_node_key'] = node_key
-                result['scm_valence'] = valence
+                # Log SCM storage operation
+                self._log_scm_operation("SCM_STORE", {
+                    "node_key": node_key,
+                    "cluster_id": cluster_id,
+                    "coordinates": coordinates,
+                    "location_type": location_type,
+                    "coord_key": coord_key,
+                    "valence": f"{valence:.3f}",
+                    "entities": str(entities)
+                })
+                
+                # Add SCM info to coord_result
+                coord_result['scm_node_key'] = node_key
+                coord_result['scm_valence'] = valence
                 
             except Exception as e:
                 if self.verbose:
                     print(f"   [ASMC] Warning: SCM linking failed: {e}")
         
-        return result
+        # Return our coordinate result
+        return {
+            'success': True,
+            'coordinate_key': coord_key,
+            'coordinates': coord_result.get('coordinates'),
+            'summary': coord_result.get('summary'),
+            'scm_node_key': coord_result.get('scm_node_key'),
+            'scm_valence': coord_result.get('scm_valence')
+        }
     
     def get_context(self, query: str, layer1_count: int = 6, layer2_count: int = 6):
         """
@@ -303,6 +343,18 @@ class AdvancedSemanticMemory:
         
         # Get cluster info
         cluster = self.scm.get_cluster(cluster_id)
+        
+        # Log SCM retrieval operation
+        self._log_scm_operation("SCM_RETRIEVE", {
+            "node_key": node.get('node_key', 'unknown'),
+            "cluster_id": cluster_id,
+            "coordinates": coordinates,
+            "location_type": node.get('location_type', 'unknown'),
+            "visit_count": node.get('visit_count', 0),
+            "stm_links": len(node.get('stm_coord_keys', [])),
+            "ltm_links": len(node.get('ltm_engram_ids', [])),
+            "valence": f"{node.get('aggregate_valence', 0.0):.3f}"
+        })
         
         # Fetch recent STM memories
         stm_memories = []
