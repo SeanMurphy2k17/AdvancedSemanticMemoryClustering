@@ -30,6 +30,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(current_dir, 'SpatialShortTermContextAIMemory'))
 
 from STM_API import create_stm_api
+from .SpatialComprehensionMap import create_scm
 
 class AdvancedSemanticMemory:
     """
@@ -38,7 +39,7 @@ class AdvancedSemanticMemory:
     Unified interface for two-layer semantic memory system
     """
     
-    def __init__(self, max_stm_entries: int = 50, ltm_db_path: str = "ASMC_memory.lmdb", verbose: bool = False):
+    def __init__(self, max_stm_entries: int = 50, ltm_db_path: str = "ASMC_memory.lmdb", verbose: bool = False, enable_scm: bool = True):
         """
         Initialize the Advanced Semantic Memory Clustering system
         
@@ -46,10 +47,12 @@ class AdvancedSemanticMemory:
             max_stm_entries: Maximum short-term memory entries (default: 50)
             ltm_db_path: Path to long-term memory database (default: ASMC_memory.lmdb)
             verbose: Enable detailed logging (default: False)
+            enable_scm: Enable Spatial Comprehension Map integration (default: True)
         """
         self.max_stm_entries = max_stm_entries
         self.ltm_db_path = ltm_db_path
         self.verbose = verbose
+        self.enable_scm = enable_scm
         
         # Initialize STM (which handles SVC and LTM internally)
         self._stm_api = create_stm_api(
@@ -60,15 +63,22 @@ class AdvancedSemanticMemory:
             verbose=verbose
         )
         
+        # Initialize SCM (Spatial Comprehension Map)
+        self.scm = None
+        if enable_scm:
+            self.scm = create_scm(db_path="./scm_data/scm.lmdb", verbose=verbose)
+        
         if verbose:
             print("🧠 Advanced Semantic Memory Clustering initialized!")
             print(f"   STM Capacity: {max_stm_entries} entries")
             print(f"   LTM Database: {ltm_db_path}")
             print(f"   Features: Two-layer retrieval, 9D clustering, 117k word sentiment")
+            if enable_scm:
+                print(f"   🗺️ Spatial Comprehension Map: ENABLED")
     
     def add_experience(self, situation: str, response: str, 
                       thought: str = "", objective: str = "", action: str = "", result: str = "",
-                      metadata: dict = None):
+                      spatial_anchor: dict = None, metadata: dict = None):
         """
         Add an experience to memory (stores in STM, auto-promotes to LTM)
         
@@ -78,12 +88,15 @@ class AdvancedSemanticMemory:
             thought: Separated thought output from LLM
             objective: Separated objective output from LLM
             action: Action taken by agent
+            result: Result of action
+            spatial_anchor: Optional spatial context (dict with structure_type, cluster_id, coordinates, entities)
             metadata: Optional metadata dictionary
             
         Returns:
             Dict: Storage result with coordinate information
         """
-        return self._stm_api.add_conversation(
+        # Store in STM (9D semantic clustering)
+        result = self._stm_api.add_conversation(
             user_message=situation,
             ai_response=response,
             thought=thought,
@@ -92,6 +105,59 @@ class AdvancedSemanticMemory:
             result=result,
             metadata=metadata
         )
+        
+        coord_key = result.get('coordinate_key')
+        
+        # SCM Integration: If spatial anchor provided, link memory to location
+        if self.scm and spatial_anchor and coord_key:
+            try:
+                # Extract spatial info
+                structure_type = spatial_anchor.get('structure_type', 'spatial')
+                cluster_id = spatial_anchor.get('cluster_id')
+                coordinates = spatial_anchor.get('coordinates', {})
+                location_type = spatial_anchor.get('context_metadata', {}).get('location_type', '')
+                entities = spatial_anchor.get('entities', [])
+                neighbors = spatial_anchor.get('neighbors', {})
+                
+                if not cluster_id:
+                    return result  # Skip if no cluster specified
+                
+                # Ensure cluster exists
+                if not self.scm.cluster_exists(cluster_id):
+                    self.scm.create_cluster(
+                        cluster_id=cluster_id,
+                        cluster_type=structure_type,
+                        description=spatial_anchor.get('context_metadata', {}).get('description', '')
+                    )
+                
+                # Create/update node with physical structure
+                node_key = self.scm.create_or_update_node(
+                    structure_type=structure_type,
+                    cluster_id=cluster_id,
+                    coordinates=coordinates,
+                    location_type=location_type,
+                    entities=entities,
+                    neighbors=neighbors
+                )
+                
+                # Record visit
+                self.scm.visit_node(structure_type, cluster_id, coordinates)
+                
+                # Extract valence from ASMC sentiment
+                valence = self._extract_valence_from_stm(coord_key)
+                
+                # Link STM memory to SCM node
+                self.scm.link_stm_memory(node_key, coord_key, valence)
+                
+                # Add SCM info to result
+                result['scm_node_key'] = node_key
+                result['scm_valence'] = valence
+                
+            except Exception as e:
+                if self.verbose:
+                    print(f"   [ASMC] Warning: SCM linking failed: {e}")
+        
+        return result
     
     def get_context(self, query: str, layer1_count: int = 6, layer2_count: int = 6):
         """
@@ -120,11 +186,236 @@ class AdvancedSemanticMemory:
     
     def get_statistics(self):
         """Get comprehensive system statistics"""
-        return self._stm_api.get_statistics()
+        stats = self._stm_api.get_statistics()
+        
+        # Add SCM statistics if enabled
+        if self.scm:
+            scm_stats = self.scm.get_statistics()
+            stats['scm'] = scm_stats
+        
+        return stats
+    
+    def _extract_valence_from_stm(self, coord_key: str) -> float:
+        """
+        Extract emotional significance from STM entry using ASMC's sentiment analysis
+        
+        Reuses existing NLTK SentiWordNet analysis from coordinate generation.
+        
+        Args:
+            coord_key: 9D semantic coordinate key
+            
+        Returns:
+            float: Valence (-1.0 to +1.0)
+        """
+        try:
+            # Get STM entry
+            stm_entry = self._stm_api._stm.stm_entries.get(coord_key)
+            if not stm_entry:
+                return 0.0
+            
+            # Check if coordinate result has fingerprint with sentiment
+            # (ASMC already computed this during coordinate generation)
+            coord_result = stm_entry.get('coord_result', {})
+            
+            # Try to extract from fingerprint (if available)
+            if 'fingerprint' in coord_result:
+                fingerprint = coord_result['fingerprint']
+                if hasattr(fingerprint, 'semantic_features'):
+                    sentiment = fingerprint.semantic_features.get('sentiment', {})
+                    if sentiment:
+                        pos_score = sentiment.get('positive', 0.0)
+                        neg_score = sentiment.get('negative', 0.0)
+                        
+                        # Convert to -1 to +1 scale
+                        if pos_score + neg_score > 0:
+                            valence = (pos_score - neg_score) / (pos_score + neg_score)
+                            return valence
+            
+            # Fallback: Analyze response text directly (simpler heuristic)
+            response = stm_entry.get('ai_response', '')
+            return self._simple_valence_extraction(response)
+            
+        except Exception as e:
+            if self.verbose:
+                print(f"   [ASMC] Warning: Valence extraction failed: {e}")
+            return 0.0
+    
+    def _simple_valence_extraction(self, text: str) -> float:
+        """
+        Simple valence extraction using keyword matching
+        (Fallback if ASMC sentiment not available)
+        """
+        text_lower = text.lower()
+        
+        positive_keywords = [
+            'good', 'great', 'excellent', 'found', 'discovered', 'satisfied',
+            'happy', 'like', 'love', 'beautiful', 'amazing', 'successful',
+            'comfortable', 'safe', 'peaceful', 'enjoy', 'interesting'
+        ]
+        
+        negative_keywords = [
+            'bad', 'terrible', 'failed', 'stuck', 'lost', 'confused',
+            'sad', 'hate', 'scary', 'frustrating', 'painful', 'unable',
+            'trapped', 'starving', 'dangerous', 'avoid'
+        ]
+        
+        pos_count = sum(1 for word in positive_keywords if word in text_lower)
+        neg_count = sum(1 for word in negative_keywords if word in text_lower)
+        
+        total = pos_count + neg_count
+        if total > 0:
+            return (pos_count - neg_count) / total
+        
+        return 0.0
+    
+    def get_spatial_context(self, structure_type: str, cluster_id: str, coordinates: dict,
+                           radius: int = 0, include_ltm: bool = True, max_memories: int = 5):
+        """
+        Get integrated spatial + semantic context for a location
+        
+        Returns:
+        - SCM node (structure, entities, neighbors, statistics)
+        - Recent STM memories at this location
+        - LTM patterns at this location
+        - Cluster-level context
+        
+        Args:
+            structure_type: Type of structure ('spatial', 'linear', etc.)
+            cluster_id: Cluster identifier
+            coordinates: Position within cluster
+            radius: Include nearby nodes (not yet implemented)
+            include_ltm: Include LTM patterns
+            max_memories: Maximum STM memories to return
+            
+        Returns:
+            Dict with complete spatial + semantic context
+        """
+        if not self.scm:
+            return None
+        
+        # Get SCM node
+        node = self.scm.get_node(structure_type, cluster_id, coordinates)
+        if not node:
+            return None
+        
+        # Get cluster info
+        cluster = self.scm.get_cluster(cluster_id)
+        
+        # Fetch recent STM memories
+        stm_memories = []
+        for coord_key in node.get('stm_coord_keys', [])[-max_memories:]:
+            entry = self._stm_api._stm.stm_entries.get(coord_key)
+            if entry:
+                stm_memories.append({
+                    'coord_key': coord_key,
+                    'semantic_summary': entry.get('semantic_summary', ''),
+                    'timestamp': entry.get('timestamp', ''),
+                    'valence': entry.get('valence', 0.0)
+                })
+        
+        # Fetch LTM patterns (if requested)
+        ltm_patterns = []
+        if include_ltm:
+            for ltm_ref in node.get('ltm_engram_ids', []):
+                ltm_patterns.append({
+                    'engram_id': ltm_ref.get('engram_id'),
+                    'concept': ltm_ref.get('concept'),
+                    'strength': ltm_ref.get('strength', 0.0)
+                })
+        
+        return {
+            'node': node,
+            'cluster': cluster,
+            'stm_memories': stm_memories,
+            'ltm_patterns': ltm_patterns,
+            'visit_count': node.get('visit_count', 0),
+            'aggregate_valence': node.get('aggregate_valence', 0.0),
+            'cluster_valence': cluster.get('aggregate_valence', 0.0) if cluster else 0.0
+        }
+    
+    def get_spatial_context_string(self, structure_type: str, cluster_id: str, coordinates: dict,
+                                   max_memories: int = 3) -> str:
+        """
+        Get human-readable spatial context string for LLM prompts
+        
+        Returns formatted string with:
+        - Current location info
+        - Physical objects/entities
+        - Recent memories
+        - Long-term patterns
+        - Emotional valence
+        - Available exits
+        """
+        context = self.get_spatial_context(structure_type, cluster_id, coordinates, max_memories=max_memories)
+        if not context:
+            return ""
+        
+        node = context['node']
+        cluster = context['cluster']
+        
+        # Build context string
+        lines = []
+        lines.append("=== SPATIAL CONTEXT ===")
+        lines.append(f"Location: {node.get('location_type', 'Unknown')} at {coordinates}")
+        lines.append(f"Region: {cluster.get('description', cluster_id) if cluster else cluster_id}")
+        lines.append(f"Visits: {node.get('visit_count', 0)} times")
+        
+        # Valence
+        valence = node.get('aggregate_valence', 0.0)
+        if valence > 0.3:
+            feeling = "positive (+{:.2f})".format(valence)
+        elif valence < -0.3:
+            feeling = "negative ({:.2f})".format(valence)
+        else:
+            feeling = "neutral ({:.2f})".format(valence)
+        lines.append(f"Feeling: {feeling}")
+        
+        # Objects
+        entities = node.get('entities', [])
+        if entities:
+            lines.append(f"Objects here: {', '.join(entities)}")
+        
+        # Recent memories
+        if context['stm_memories']:
+            lines.append("\nRecent experiences:")
+            for mem in context['stm_memories'][:3]:
+                lines.append(f"  - {mem['semantic_summary'][:60]}...")
+        
+        # Long-term patterns
+        if context['ltm_patterns']:
+            lines.append("\nKnown patterns:")
+            for pat in context['ltm_patterns'][:3]:
+                lines.append(f"  - {pat['concept']} (strength: {pat['strength']:.2f})")
+        
+        # Neighbors/exits
+        neighbors = node.get('neighbors', {})
+        if neighbors:
+            lines.append("\nAvailable exits:")
+            for direction, neighbor in neighbors.items():
+                if neighbor:
+                    lines.append(f"  - {direction}")
+        
+        return "\n".join(lines)
     
     def clear_memory(self, confirm: bool = False):
         """Clear all memories (DESTRUCTIVE - requires confirm=True)"""
-        return self._stm_api.clear_memory(confirm=confirm)
+        result = self._stm_api.clear_memory(confirm=confirm)
+        
+        # Also clear SCM if enabled
+        if self.scm and confirm:
+            # Close and recreate SCM (clears database)
+            self.scm.close()
+            import os
+            scm_path = "./scm_data/scm.lmdb"
+            if os.path.exists(scm_path):
+                try:
+                    os.remove(scm_path)
+                    os.remove(scm_path + "-lock")
+                except:
+                    pass
+            self.scm = create_scm(db_path=scm_path, verbose=self.verbose)
+        
+        return result
     
     def shutdown(self):
         """Gracefully shutdown the memory system"""
