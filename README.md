@@ -8,15 +8,17 @@ Built by Sean Murphy & Claude AI | MIT License
 
 ## What Is This?
 
-ASMC provides **episodic long-term memory** for LLM applications through three-layer context retrieval, enabling persistent knowledge beyond context window limitations:
+ASMC provides **episodic long-term memory** for autonomous systems and LLM applications through three-layer context retrieval, enabling persistent operational knowledge beyond context window limitations:
 
-- **Layer 1 (Immediate):** Recent interactions and locally relevant matches
-- **Layer 2 (Depth):** Semantic associations and concept clustering across time
-- **Layer 3 (Spatial):** Location-anchored episodic memory with visit tracking and valence scoring
+- **Layer 1 (Immediate):** Recent operations and locally relevant matches
+- **Layer 2 (Depth):** Semantic associations and pattern clustering across time
+- **Layer 3 (Spatial):** Location-anchored episodic memory with visit tracking and success/failure scoring
+
+**Primary use case:** Autonomous mobile robots (AMRs), manufacturing automation, and facility AI systems that need to remember and learn from spatial experiences.
 
 This sidesteps context length limitations:
-- ❌ **Without ASMC:** "I don't have context for that question" (context window exceeded)
-- ✅ **With ASMC:** "Based on our earlier discussion about X, past interactions with Y, and events at this location, here's the relevant information..."
+- ❌ **Without ASMC:** "No data available for this location" (context window exceeded)
+- ✅ **With ASMC:** "Based on 47 prior visits to this zone, past obstacle encounters at this coordinate, and 92% operational success rate, proceeding with caution..."
 
 ---
 
@@ -30,32 +32,32 @@ memory = create_memory(max_entries=50, verbose=True)
 
 # Store an experience with spatial context
 memory.add_experience(
-    situation="Found healing potion in chamber (2,3)",
-    response="Gained 30 HP! Health now 100/100",
+    situation="Located pallet of components in warehouse zone A3",
+    response="Identified 50 units of SKU-4729. Inventory confirmed.",
     spatial_anchor={
         'structure_type': 'spatial',
-        'cluster_id': 'level_1',
+        'cluster_id': 'warehouse_floor_1',
         'coordinates': {'x': 2, 'y': 3, 'z': 1},
-        'entities': ['healing potion'],
-        'context_metadata': {'location_type': 'chamber'}
+        'entities': ['pallet', 'SKU-4729'],
+        'context_metadata': {'location_type': 'storage_zone', 'zone_id': 'A3'}
     }
 )
 
 # Later, get context for related query
-context = memory.get_context("Tell me about healing items", layer1_count=6, layer2_count=6)
+context = memory.get_context("Where did I see SKU-4729?", layer1_count=6, layer2_count=6)
 
 # Get spatial context for current location
 spatial_context = memory.get_spatial_context(
     structure_type='spatial',
-    cluster_id='level_1',
+    cluster_id='warehouse_floor_1',
     coordinates={'x': 2, 'y': 3, 'z': 1}
 )
 
 # Returns:
-# - Visit count: How many times you've been here
-# - Aggregate valence: How you "feel" about this location
-# - Recent memories: What happened here before
-# - Entities: What objects are present
+# - Visit count: How many times the robot has navigated here
+# - Aggregate valence: Success/failure rate at this location
+# - Recent memories: What operations occurred here before
+# - Entities: What inventory/equipment is present
 ```
 
 ---
@@ -83,19 +85,19 @@ spatial_context = memory.get_spatial_context(
 ### Layer 3: Spatial Comprehension (SCM - Spatial Comprehension Map)
 **Location-aware, experiential, grounded**
 
-- **Physical memory anchoring**: Links experiences to locations
-- **Visit tracking**: Remembers how many times you've been somewhere
-- **Emotional valence**: Tracks positive/negative feelings about locations
-- **Entity awareness**: What objects/NPCs exist at each location
-- **Cluster organization**: Groups locations into levels/regions/zones
-- **Neighbor mapping**: Knows which locations are adjacent
-- **Persistent storage**: LMDB database survives restarts
+- **Physical memory anchoring**: Links experiences to physical locations
+- **Visit tracking**: Remembers navigation frequency for path optimization
+- **Operational valence**: Tracks success/failure rates at each location
+- **Entity awareness**: What inventory, equipment, or obstacles exist at each coordinate
+- **Cluster organization**: Groups locations into warehouses/zones/aisles/stations
+- **Neighbor mapping**: Knows spatial relationships and adjacency
+- **Persistent storage**: LMDB database survives restarts and power cycles
 
-**Example:** An AI agent exploring a dungeon remembers:
-- "I've visited this chamber 5 times"
-- "I found a healing potion here before (+0.8 valence)"
-- "Last time I was here, I took damage from a trap"
-- "This chamber connects north to the corridor"
+**Example:** An autonomous mobile robot (AMR) in a warehouse remembers:
+- "I've navigated this aisle 47 times (high-traffic route)"
+- "Found SKU-4729 here before (+0.9 valence - reliable inventory location)"
+- "Last time: detected obstacle, had to reroute (-0.3 valence)"
+- "This zone connects to loading dock via corridor C"
 
 ---
 
@@ -116,32 +118,38 @@ Every piece of text is converted to a 9-dimensional coordinate where semantic si
 - **E:** Modal (questions, negations, subjectivity)
 - **F:** Coherence (semantic consistency)
 
-**Result:** "I love this" and "I adore this" cluster together. "I hate this" clusters far away.
+**Result:** "Charging station operational" and "Power supply functioning normally" cluster together. "Obstacle detected in corridor" clusters far away.
 
 ### Spatial Comprehension Map (SCM)
 
 SCM creates a **physical memory layer** by linking semantic memories to real-world locations:
 
 ```
-Level 1 (Dungeon Entrance)
-  └─ Chamber (1,1): spawn point
-       ├─ Visited: 12 times
-       ├─ Valence: neutral (0.0)
-       ├─ Memories: 3 STM links
-       └─ Objects: [empty]
+Warehouse Floor 1
+  └─ Zone A1: Receiving dock
+       ├─ Visited: 143 times (high traffic)
+       ├─ Valence: +0.75 (reliable operations)
+       ├─ Memories: 12 STM links
+       └─ Entities: [forklift, pallet jack, scanning station]
   
-  └─ Chamber (2,3): healing room
-       ├─ Visited: 2 times
-       ├─ Valence: positive (+0.85)
+  └─ Zone A3: Storage aisle
+       ├─ Visited: 89 times
+       ├─ Valence: +0.92 (efficient retrieval zone)
+       ├─ Memories: 7 STM links
+       └─ Entities: [SKU-4729, SKU-3301, empty pallet]
+  
+  └─ Zone C5: Maintenance corridor
+       ├─ Visited: 4 times
+       ├─ Valence: -0.65 (frequent obstacles)
        ├─ Memories: 2 STM links
-       └─ Objects: [healing potion]
+       └─ Entities: [toolbox, caution sign]
 ```
 
 **Why this matters:**
-- Agents remember "I found treasure in the northwest corner last time"
-- Avoid locations with negative valence (danger zones)
-- Return to locations with positive associations
-- Build spatial knowledge over time
+- Robots remember "SKU-4729 is reliably found in zone A3, grid (2,3)"
+- Avoid routes with negative valence (obstacle-prone corridors)
+- Prioritize high-efficiency zones for routine operations
+- Build operational knowledge through experience
 
 ### Powered by SentiWordNet
 
@@ -154,32 +162,31 @@ Level 1 (Dungeon Entrance)
 
 ## Real-World Example
 
-**Scenario:** AI agent exploring a dungeon
+**Scenario:** Autonomous mobile robot (AMR) performing warehouse inventory scan
 
 **Traditional system:**
 ```
-Agent: "I'm in chamber (2,3)"
-AI: "I see a healing potion. What do you want to do?"
+Robot: "At zone A3, grid (2,3)"
+System: "Detected pallet. Scan barcode?"
 ```
 
 **With ASMC (STM + LTM + SCM):**
 ```
-Layer 1 (STM): "Recently took 25 damage from trap"
+Layer 1 (STM): "Recently scanned 12 pallets in zone A2"
 Layer 2 (LTM): 
-  - Healing potion → past memory: "healed for 30 HP before"
-  - Chamber → association: "safe rooms usually have good items"
+  - SKU-4729 → past memory: "found at this location 3 times before"
+  - Zone A3 → association: "high-priority inventory area"
 Layer 3 (SCM):
-  - Location (2,3): Visited 0 times (new!)
-  - Location (1,1): Visited 12 times, valence +0.3 (spawn safety)
-  - Location (3,2): Visited 1 time, valence -0.7 (trap danger!)
+  - Location (2,3): Visited 89 times, valence +0.92 (reliable zone)
+  - Location (1,1): Visited 143 times, valence +0.75 (receiving dock)
+  - Location (5,7): Visited 4 times, valence -0.65 (obstacle-prone)
 
-AI: "I'm in chamber (2,3) - I've never been here before! 
-     I see a healing potion. Since I'm hurt from that trap 
-     at (3,2), I should take it. This could be a safe room 
-     like the spawn at (1,1)."
+System: "At zone A3, grid (2,3) - high-efficiency location. 
+        Expected SKU-4729 based on 3 prior scans here. 
+        This zone has 92% success rate. Scanning now..."
 ```
 
-**The difference:** Location-indexed retrieval + episodic pattern matching + temporal context.
+**The difference:** Location-indexed retrieval + operational pattern matching + spatial reliability scoring.
 
 ---
 
@@ -246,17 +253,18 @@ When adding experiences with spatial context, provide a `spatial_anchor` dict:
 
 ```python
 spatial_anchor = {
-    'structure_type': 'spatial',  # Type: 'spatial', 'linear', 'network'
-    'cluster_id': 'level_1',      # Cluster/region identifier
-    'coordinates': {              # Position within cluster
+    'structure_type': 'spatial',     # Type: 'spatial', 'linear', 'network'
+    'cluster_id': 'warehouse_1',     # Facility/building identifier
+    'coordinates': {                 # Position within facility
         'x': 2, 
         'y': 3, 
-        'z': 1
+        'z': 1                       # Floor level
     },
-    'entities': ['healing potion', 'chest'],  # Objects at location
+    'entities': ['pallet', 'forklift', 'SKU-4729'],  # Objects at location
     'context_metadata': {
-        'location_type': 'chamber',  # Room type
-        'description': 'Safe healing room'
+        'location_type': 'storage_zone',
+        'zone_id': 'A3',
+        'description': 'High-frequency retrieval zone'
     }
 }
 ```
@@ -294,27 +302,32 @@ All memory structures are stored in `AdvancedSemanticMemoryClustering/MemoryStru
 
 ## Use Cases
 
-### 1. **LLM Context Management**
-Provide persistent episodic + semantic + spatial memory for LLM applications requiring long-term context beyond token limits
+### 1. **Autonomous Mobile Robots (AMRs)**
+Enable warehouse robots to build spatial knowledge and operational patterns
+- "Charging station reliability at grid (12,4): 98% success rate" (positive valence)
+- "Aisle C frequently blocked between 2-4 PM" (temporal + spatial pattern)
+- "SKU-4729 relocated from A3 to B7 on 2024-01-15" (episodic update)
 
-### 2. **Autonomous Agents & Robotics**
-Enable embodied AI systems to reference past interactions and location-based data
-- "Charging stations located in room 204" (persistent spatial memory)
-- "Hallway at (5,3) flagged as hazardous" (negative valence tracking)
+### 2. **Manufacturing Automation**
+Robotic arms and assembly systems that learn from operational history
+- "Bolt torque sensor at station 3 reads 2% high" (location-specific calibration)
+- "Part feeder jams occur at position (5,2) 3x more than average" (failure pattern detection)
 
-### 3. **Game AI**
-NPCs with persistent interaction memory anchored to game locations
-- Track player actions at specific coordinates
-- Reference past events during dialogue generation
+### 3. **Facility Management AI**
+Building automation systems with persistent environmental memory
+- "HVAC zone 4 temperature deviates +3°C during afternoon" (temporal-spatial correlation)
+- "Motion sensor B12 triggered 47 times today (above baseline)" (anomaly detection)
 
-### 4. **Dungeon Crawlers & Exploration Games**
-AI that builds spatial knowledge and learns optimal paths
+### 4. **Inventory Management Systems**
+AI-assisted logistics with location-aware stock tracking
+- "High-demand SKUs clustered in zone A for fast retrieval" (optimization pattern)
+- "Pallet damage incidents concentrated near loading dock" (risk zone identification)
 
-### 5. **Conversational AI**
-Provide chatbots with conversation history and contextual continuity beyond session limits
+### 5. **Conversational AI & LLM Applications**
+Chatbots and assistants with long-term context management beyond token limits
 
-### 6. **Research & Analysis**
-Cluster and retrieve research notes semantically with spatial organization
+### 6. **Research & Development**
+Cluster and retrieve technical notes semantically with spatial/project organization
 
 ---
 
@@ -322,59 +335,231 @@ Cluster and retrieve research notes semantically with spatial organization
 
 **Why Three Layers?**
 
-Human memory architecture provides a proven model:
-- **Working Memory:** Current context (STM - short-term buffer)
-- **Semantic Memory:** Conceptual associations (LTM - long-term patterns)
-- **Episodic Memory:** Event-location binding (SCM - spatial anchoring)
+Human memory architecture provides a proven model for autonomous systems:
+- **Working Memory:** Current sensor data and immediate context (STM - operational buffer)
+- **Semantic Memory:** Procedural knowledge and pattern recognition (LTM - learned associations)
+- **Episodic Memory:** Location-event binding and experience recall (SCM - spatial grounding)
 
-Traditional LLM applications only utilize working memory (context window). ASMC extends this with persistent semantic depth and spatial grounding:
-- Sentiment-based filtering (valence scoring)
-- Conceptual network traversal (semantic links)
-- Location-aware context retrieval (spatial indexing)
-- Temporal pattern recognition (visit frequency)
+Traditional robotic systems rely solely on immediate sensor data and pre-programmed rules. ASMC extends this with persistent experiential learning:
+- **Valence-based path planning** (success/failure scoring per location)
+- **Pattern recognition** (semantic links identify recurring operational states)
+- **Location-aware decision making** (spatial indexing for context retrieval)
+- **Temporal optimization** (visit frequency informs route efficiency)
 
-**This enables LLMs to maintain coherent long-term context without hitting token limits.**
+**This enables autonomous systems to learn from experience and adapt behavior based on spatial memory, mimicking biological spatial cognition.**
+
+**Target applications:**
+- Warehouse AMRs (autonomous mobile robots)
+- Manufacturing robotic systems
+- Facility automation AI
+- Multi-agent coordination systems
+- Any LLM application requiring persistent context beyond token limits
 
 ---
 
-## Example: Dungeon Exploration
+## Example: Warehouse Operations
 
 ```python
 memory = create_memory(max_entries=50)
 
-# Cycle 1: Agent finds trap
+# Cycle 1: Robot encounters obstacle
 memory.add_experience(
-    situation="Chamber (3,2), trap visible ahead",
-    response="Taking damage! -25 HP",
+    situation="Navigating corridor C, detected unexpected pallet blocking path",
+    response="Emergency stop executed. Rerouting via corridor D.",
     spatial_anchor={
         'structure_type': 'spatial',
-        'cluster_id': 'level_1',
-        'coordinates': {'x': 3, 'y': 2, 'z': 1},
-        'entities': ['bear trap'],
-        'context_metadata': {'location_type': 'corridor'}
+        'cluster_id': 'warehouse_floor_1',
+        'coordinates': {'x': 5, 'y': 7, 'z': 1},
+        'entities': ['pallet', 'obstacle'],
+        'context_metadata': {'location_type': 'corridor', 'corridor_id': 'C'}
     }
 )
 
-# Cycle 5: Agent returns to same location
+# Cycle 47: Robot returns to same corridor
 spatial_info = memory.get_spatial_context(
     structure_type='spatial',
-    cluster_id='level_1',
-    coordinates={'x': 3, 'y': 2, 'z': 1}
+    cluster_id='warehouse_floor_1',
+    coordinates={'x': 5, 'y': 7, 'z': 1}
 )
 
 print(spatial_info)
 # Output:
 # {
-#   'visit_count': 2,
-#   'aggregate_valence': -0.65,  # Negative! Danger!
+#   'visit_count': 4,
+#   'aggregate_valence': -0.68,  # Negative! Frequent obstacles!
 #   'stm_memories': [
-#     {'full_context': 'User: Chamber (3,2)...\nAI: Taking damage! -25 HP'}
+#     {'full_context': 'User: Navigating corridor C...\nSystem: Emergency stop...'}
 #   ],
-#   'node': {'entities': ['bear trap'], ...}
+#   'node': {'entities': ['pallet', 'obstacle'], ...}
 # }
 
-# Agent now knows: "I've been hurt here before - avoid this spot!"
+# Robot now prioritizes alternative routes to avoid this zone
 ```
+
+---
+
+## Preloading Operational Knowledge
+
+For production deployments, you can **prime ASMC with existing operational data** before runtime. This enables autonomous systems to start with baseline knowledge rather than learning from scratch.
+
+### Method 1: Individual Experience Loading (Runtime)
+
+For structured operational data or procedural knowledge:
+
+```python
+from AdvancedSemanticMemoryClustering import create_memory
+
+# Initialize memory system
+memory = create_memory(max_entries=50, verbose=True)
+
+# Preload known operational patterns
+operational_knowledge = [
+    {
+        "situation": "Zone A3 inventory scan - SKU-4729",
+        "response": "Expected location confirmed. 50 units present.",
+        "spatial_anchor": {
+            'structure_type': 'spatial',
+            'cluster_id': 'warehouse_floor_1',
+            'coordinates': {'x': 2, 'y': 3, 'z': 1},
+            'entities': ['SKU-4729', 'pallet'],
+            'context_metadata': {'location_type': 'storage_zone', 'zone_id': 'A3'}
+        }
+    },
+    {
+        "situation": "Charging station reliability check",
+        "response": "Station operational. 98% success rate over 1000 uses.",
+        "spatial_anchor": {
+            'structure_type': 'spatial',
+            'cluster_id': 'warehouse_floor_1',
+            'coordinates': {'x': 12, 'y': 4, 'z': 1},
+            'entities': ['charging_station'],
+            'context_metadata': {'location_type': 'utility_zone'}
+        }
+    },
+    {
+        "situation": "Corridor C obstacle frequency analysis",
+        "response": "High obstacle rate detected. Alternative route recommended.",
+        "spatial_anchor": {
+            'structure_type': 'spatial',
+            'cluster_id': 'warehouse_floor_1',
+            'coordinates': {'x': 5, 'y': 7, 'z': 1},
+            'entities': ['frequent_obstacles'],
+            'context_metadata': {'location_type': 'corridor', 'corridor_id': 'C'}
+        }
+    }
+]
+
+# Load each knowledge entry
+for knowledge in operational_knowledge:
+    memory.add_experience(
+        situation=knowledge["situation"],
+        response=knowledge["response"],
+        spatial_anchor=knowledge["spatial_anchor"]
+    )
+
+print("✅ Operational knowledge preloaded!")
+```
+
+### Method 2: Bulk Data Upload (LTM Mass Loader)
+
+For large-scale document ingestion (manuals, procedures, historical logs):
+
+```python
+import sys
+sys.path.append('AdvancedSemanticMemoryClustering/LoingTermSpatialMemory')
+from mass_data_uploader import process_mass_data
+
+# Bulk load operational documentation
+results = process_mass_data(
+    folder_path='./operational_docs/',
+    db_path='MemoryStructures/LTM/ltm.lmdb',  # Use ASMC's LTM path
+    file_types=['.txt', '.md', '.csv', '.json'],
+    enable_linking=True,  # Enable semantic associations
+    chunk_size=300  # Optimal for procedural text
+)
+
+print(f"✅ Loaded {results['memories_stored']:,} memories")
+print(f"⚡ Processing rate: {results['rate']:.0f} memories/second")
+```
+
+**Supported formats:**
+- `.txt`, `.md`, `.rst` - Procedural documentation, operational logs
+- `.csv` - Inventory records, sensor logs, maintenance schedules
+- `.json` - Structured operational data, configuration files
+
+**Performance:**
+- **Speed:** 100-500 memories/second (algorithmic processing, no LLM bottleneck)
+- **Capacity:** Millions of memories in LMDB storage
+- **Linking:** Automatic semantic associations between related knowledge
+
+### Method 3: JSON Batch Import (Structured Data)
+
+For pre-formatted operational datasets:
+
+```python
+import json
+from AdvancedSemanticMemoryClustering import create_memory
+
+# Load structured operational data
+with open('warehouse_baseline_knowledge.json', 'r') as f:
+    baseline_data = json.load(f)
+
+memory = create_memory(max_entries=50)
+
+# Import each entry
+for entry in baseline_data['operational_patterns']:
+    memory.add_experience(
+        situation=entry['situation'],
+        response=entry['response'],
+        thought=entry.get('analysis', ''),
+        spatial_anchor=entry.get('location', None),
+        metadata=entry.get('metadata', {})
+    )
+
+print(f"✅ Imported {len(baseline_data['operational_patterns'])} baseline patterns")
+```
+
+**Example JSON structure:**
+
+```json
+{
+  "operational_patterns": [
+    {
+      "situation": "Zone B high-demand SKU retrieval",
+      "response": "Average retrieval time: 45 seconds. Success rate: 96%",
+      "analysis": "Zone B optimized for fast access",
+      "location": {
+        "structure_type": "spatial",
+        "cluster_id": "warehouse_floor_1",
+        "coordinates": {"x": 8, "y": 5, "z": 1},
+        "entities": ["SKU-1201", "SKU-1203"],
+        "context_metadata": {"zone_id": "B", "priority": "high"}
+      },
+      "metadata": {
+        "data_source": "historical_logs",
+        "confidence": 0.96,
+        "sample_size": 1000
+      }
+    }
+  ]
+}
+```
+
+### Use Cases for Preloading
+
+1. **New Robot Deployment:** Transfer learned knowledge from existing fleet to new units
+2. **Facility Onboarding:** Prime system with floor plans, zone layouts, equipment locations
+3. **Procedural Knowledge:** Load SOPs, safety protocols, maintenance procedures
+4. **Historical Data:** Import logs from legacy systems for continuity
+5. **Simulation Training:** Preload synthetic operational scenarios for testing
+
+### Best Practices
+
+- **Spatial anchors:** Always include coordinates for location-aware retrieval
+- **Valence priming:** Include success/failure context to guide decision-making
+- **Metadata richness:** Add source, confidence, timestamps for traceability
+- **Incremental loading:** Start with critical knowledge, expand over time
+- **Validation:** Test retrieval accuracy after bulk loading
 
 ---
 
@@ -417,4 +602,4 @@ GitHub: https://github.com/YourUsername/AdvancedSemanticMemoryClustering
 
 ---
 
-**Extend your LLM applications beyond context window limitations with persistent, spatially-indexed episodic memory.** 🧠✨🗺️
+**Enable autonomous systems and LLM applications to learn from experience through persistent, spatially-indexed episodic memory.** 🧠✨🗺️🤖
