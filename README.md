@@ -350,6 +350,11 @@ Context-aware generation with persistent style memory
 - Track which generated outputs received positive feedback
 - Maintain narrative or stylistic consistency across sessions
 
+### 7. **Embodied robotics platforms**
+Context-aware spatial comprehension
+- Remember on a semantic level where something is
+- Remember a location and what usually occurs there
+- Can remember how to perform location specific tasks
 ---
 
 ## Architecture Philosophy
