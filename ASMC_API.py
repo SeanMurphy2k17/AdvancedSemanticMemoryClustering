@@ -39,43 +39,57 @@ class AdvancedSemanticMemory:
     Unified interface for two-layer semantic memory system
     """
     
-    def __init__(self, max_stm_entries: int = 50, ltm_db_path: str = "ASMC_memory.lmdb", verbose: bool = False, enable_scm: bool = True):
+    def __init__(self, max_stm_entries: int = 50, ltm_db_path: str = None, verbose: bool = False, enable_scm: bool = True):
         """
         Initialize the Advanced Semantic Memory Clustering system
         
         Args:
             max_stm_entries: Maximum short-term memory entries (default: 50)
-            ltm_db_path: Path to long-term memory database (default: ASMC_memory.lmdb)
+            ltm_db_path: OPTIONAL custom LTM path (default: auto-managed in MemoryStructures/)
             verbose: Enable detailed logging (default: False)
             enable_scm: Enable Spatial Comprehension Map integration (default: True)
         """
         self.max_stm_entries = max_stm_entries
-        self.ltm_db_path = ltm_db_path
         self.verbose = verbose
         self.enable_scm = enable_scm
-        self.scm_log_path = "./scm_data/scm_operations.log"
+        
+        # ASMC owns its storage - all under MemoryStructures/
+        asmc_dir = os.path.dirname(os.path.abspath(__file__))
+        self.base_memory_path = os.path.join(asmc_dir, "MemoryStructures")
+        
+        # Clean, generic naming - no app-specific prefixes
+        self.stm_path = os.path.join(self.base_memory_path, "STM")
+        self.ltm_db_path = ltm_db_path if ltm_db_path else os.path.join(self.base_memory_path, "LTM", "ltm.lmdb")
+        self.scm_path = os.path.join(self.base_memory_path, "SCM", "scm.lmdb")
+        self.scm_log_path = os.path.join(self.base_memory_path, "SCM", "scm_operations.log")
+        
+        # Ensure directories exist
+        os.makedirs(self.stm_path, exist_ok=True)
+        os.makedirs(os.path.dirname(self.ltm_db_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.scm_path), exist_ok=True)
         
         # Initialize STM (which handles SVC and LTM internally)
         self._stm_api = create_stm_api(
             max_entries=max_stm_entries,
             save_interval=30,
-            data_directory="./asmc_stm_data",
-            ltm_db_path=ltm_db_path,
+            data_directory=self.stm_path,
+            ltm_db_path=self.ltm_db_path,
             verbose=verbose
         )
         
         # Initialize SCM (Spatial Comprehension Map)
         self.scm = None
         if enable_scm:
-            self.scm = create_scm(db_path="./scm_data/scm.lmdb", verbose=verbose)
+            self.scm = create_scm(db_path=self.scm_path, verbose=verbose)
         
         if verbose:
             print("🧠 Advanced Semantic Memory Clustering initialized!")
-            print(f"   STM Capacity: {max_stm_entries} entries")
-            print(f"   LTM Database: {ltm_db_path}")
+            print(f"   Memory Base: {self.base_memory_path}")
+            print(f"   STM: {self.stm_path}")
+            print(f"   LTM: {self.ltm_db_path}")
             print(f"   Features: Two-layer retrieval, 9D clustering, 117k word sentiment")
             if enable_scm:
-                print(f"   🗺️ Spatial Comprehension Map: ENABLED")
+                print(f"   SCM: {self.scm_path}")
     
     def _log_scm_operation(self, operation_type: str, details: dict):
         """Log SCM operations to file for diagnostics"""
@@ -559,12 +573,10 @@ class AdvancedSemanticMemory:
         for coord_key in node.get('stm_coord_keys', [])[-max_memories:]:
             entry = self._stm_api._stm.stm_entries.get(coord_key)
             if entry:
-                # Return full thought (or objective if thought missing) - NO summaries
+                # Return full_context - complete interaction cycle with causation chain
                 stm_memories.append({
                     'coord_key': coord_key,
-                    'thought': entry.get('thought', '') or entry.get('objective', ''),
-                    'action': entry.get('action', ''),
-                    'result': entry.get('result', ''),
+                    'full_context': entry.get('full_context', ''),
                     'timestamp': entry.get('timestamp', ''),
                     'valence': entry.get('valence', 0.0)
                 })
@@ -631,20 +643,14 @@ class AdvancedSemanticMemory:
         if entities:
             lines.append(f"Objects here: {', '.join(entities)}")
         
-        # Recent memories - FULL thoughts, NO summaries
+        # Recent memories - FULL context with complete causation chains
         if context['stm_memories']:
             lines.append("\nRecent experiences:")
             for mem in context['stm_memories'][:5]:  # Top 5 recent memories
-                thought = mem.get('thought', '')
-                if thought:
-                    lines.append(f"  - {thought}")
-                    # Optionally include action+result for cause-effect learning
-                    action = mem.get('action', '')
-                    result = mem.get('result', '')
-                    if action:
-                        lines.append(f"    Action: {action}")
-                    if result:
-                        lines.append(f"    Result: {result}")
+                full_context = mem.get('full_context', '')
+                if full_context:
+                    lines.append(f"  {full_context}")
+                    lines.append("")  # Blank line between memories for readability
         
         # Long-term patterns
         if context['ltm_patterns']:
@@ -663,24 +669,108 @@ class AdvancedSemanticMemory:
         return "\n".join(lines)
     
     def clear_memory(self, confirm: bool = False):
-        """Clear all memories (DESTRUCTIVE - requires confirm=True)"""
-        result = self._stm_api.clear_memory(confirm=confirm)
+        """
+        Clear all memories: STM, LTM, and SCM (DESTRUCTIVE - requires confirm=True)
         
-        # Also clear SCM if enabled
-        if self.scm and confirm:
-            # Close and recreate SCM (clears database)
-            self.scm.close()
-            import os
-            scm_path = "./scm_data/scm.lmdb"
-            if os.path.exists(scm_path):
-                try:
-                    os.remove(scm_path)
-                    os.remove(scm_path + "-lock")
-                except:
-                    pass
-            self.scm = create_scm(db_path=scm_path, verbose=self.verbose)
+        Properly handles LMDB directories (not just files) using shutil.rmtree
+        """
+        if not confirm:
+            return {
+                'success': False,
+                'message': 'Must set confirm=True to clear memory (DESTRUCTIVE operation)'
+            }
         
-        return result
+        import os
+        import shutil
+        
+        cleared = {
+            'stm': False,
+            'ltm': False,
+            'scm': False,
+            'errors': []
+        }
+        
+        print("\n[MEMORY] CLEARING ALL MEMORY SYSTEMS...")
+        
+        # 1. Clear STM (RAM + cache files)
+        try:
+            print("  [STM] Clearing STM...")
+            stm_result = self._stm_api.clear_memory(confirm=True)
+            cleared['stm'] = stm_result.get('success', False)
+            
+            # Also delete STM cache directory
+            if os.path.exists(self.stm_path):
+                shutil.rmtree(self.stm_path)
+                os.makedirs(self.stm_path, exist_ok=True)
+                print(f"     [OK] STM cache directory cleared: {self.stm_path}")
+        except Exception as e:
+            cleared['errors'].append(f"STM: {e}")
+            print(f"     [FAIL] STM clearing failed: {e}")
+        
+        # 2. Clear LTM (LMDB directory)
+        try:
+            print("  [LTM] Clearing LTM...")
+            
+            # Close LTM connection first (via STM API)
+            if hasattr(self._stm_api, '_ltm') and self._stm_api._ltm:
+                self._stm_api._ltm.close()
+            
+            # Delete LTM directory
+            if os.path.exists(self.ltm_db_path):
+                if os.path.isdir(self.ltm_db_path):
+                    shutil.rmtree(self.ltm_db_path)
+                else:
+                    os.remove(self.ltm_db_path)
+                print(f"     [OK] LTM database cleared: {self.ltm_db_path}")
+                cleared['ltm'] = True
+            else:
+                print(f"     [INFO] LTM database not found: {self.ltm_db_path}")
+                cleared['ltm'] = True
+        except Exception as e:
+            cleared['errors'].append(f"LTM: {e}")
+            print(f"     [FAIL] LTM clearing failed: {e}")
+        
+        # 3. Clear SCM (LMDB directory)
+        if self.scm:
+            try:
+                print("  [SCM] Clearing SCM...")
+                
+                # Close SCM connection
+                self.scm.close()
+                
+                # Delete SCM directory
+                if os.path.exists(self.scm_path):
+                    if os.path.isdir(self.scm_path):
+                        shutil.rmtree(self.scm_path)
+                    else:
+                        os.remove(self.scm_path)
+                    print(f"     [OK] SCM database cleared: {self.scm_path}")
+                
+                # Also clear SCM log
+                if os.path.exists(self.scm_log_path):
+                    os.remove(self.scm_log_path)
+                    print(f"     [OK] SCM log cleared: {self.scm_log_path}")
+                
+                # Recreate fresh SCM
+                self.scm = create_scm(db_path=self.scm_path, verbose=self.verbose)
+                cleared['scm'] = True
+                print(f"     [OK] Fresh SCM recreated")
+            except Exception as e:
+                cleared['errors'].append(f"SCM: {e}")
+                print(f"     [FAIL] SCM clearing failed: {e}")
+        
+        success = cleared['stm'] and cleared['ltm'] and (cleared['scm'] or not self.enable_scm)
+        
+        if success:
+            print("[SUCCESS] ALL MEMORY SYSTEMS CLEARED\n")
+        else:
+            print(f"[WARNING] MEMORY CLEARING INCOMPLETE: {cleared['errors']}\n")
+        
+        return {
+            'success': success,
+            'cleared': cleared,
+            'errors': cleared['errors']
+        }
     
     def shutdown(self):
         """Gracefully shutdown the memory system"""
@@ -868,13 +958,13 @@ class AdvancedSemanticMemory:
 
 
 # Convenience factory function
-def create_memory(max_entries: int = 50, db_path: str = "ASMC_memory.lmdb", verbose: bool = False):
+def create_memory(max_entries: int = 50, db_path: str = None, verbose: bool = False):
     """
     Quick factory function to create Advanced Semantic Memory system
     
     Args:
         max_entries: Maximum STM entries
-        db_path: LTM database path  
+        db_path: OPTIONAL custom LTM path (default: auto-managed in MemoryStructures/LTM/ltm.lmdb)
         verbose: Enable logging
         
     Returns:
