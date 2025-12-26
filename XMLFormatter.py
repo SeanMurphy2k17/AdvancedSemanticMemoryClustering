@@ -202,7 +202,7 @@ class XMLFormatter:
         # Extract state from user_input (if it's sensor data)
         if 'user_input' in memory_entry:
             # Simple extraction - just store first line as context
-            state_preview = memory_entry['user_input'].split('\n')[0][:60]
+            state_preview = memory_entry['user_input'].split('\n')[0]
             if state_preview:
                 nested += f"  <state>{self._escape_xml(state_preview)}</state>\n"
         

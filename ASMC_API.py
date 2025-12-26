@@ -313,7 +313,7 @@ class AdvancedSemanticMemory:
     
     def get_spatial_context(self, structure_type: str, cluster_id: str, coordinates: dict,
                            radius: int = 0, include_ltm: bool = True, max_memories: int = 5,
-                           use_cone_search: bool = True, query_text: str = None):
+                           use_cone_search: bool = False, query_text: str = None):
         """
         Get integrated spatial + semantic context for a location
         
@@ -559,9 +559,12 @@ class AdvancedSemanticMemory:
         for coord_key in node.get('stm_coord_keys', [])[-max_memories:]:
             entry = self._stm_api._stm.stm_entries.get(coord_key)
             if entry:
+                # Return full thought (or objective if thought missing) - NO summaries
                 stm_memories.append({
                     'coord_key': coord_key,
-                    'semantic_summary': entry.get('semantic_summary', ''),
+                    'thought': entry.get('thought', '') or entry.get('objective', ''),
+                    'action': entry.get('action', ''),
+                    'result': entry.get('result', ''),
                     'timestamp': entry.get('timestamp', ''),
                     'valence': entry.get('valence', 0.0)
                 })
@@ -628,16 +631,25 @@ class AdvancedSemanticMemory:
         if entities:
             lines.append(f"Objects here: {', '.join(entities)}")
         
-        # Recent memories
+        # Recent memories - FULL thoughts, NO summaries
         if context['stm_memories']:
             lines.append("\nRecent experiences:")
-            for mem in context['stm_memories'][:3]:
-                lines.append(f"  - {mem['semantic_summary'][:60]}...")
+            for mem in context['stm_memories'][:5]:  # Top 5 recent memories
+                thought = mem.get('thought', '')
+                if thought:
+                    lines.append(f"  - {thought}")
+                    # Optionally include action+result for cause-effect learning
+                    action = mem.get('action', '')
+                    result = mem.get('result', '')
+                    if action:
+                        lines.append(f"    Action: {action}")
+                    if result:
+                        lines.append(f"    Result: {result}")
         
         # Long-term patterns
         if context['ltm_patterns']:
             lines.append("\nKnown patterns:")
-            for pat in context['ltm_patterns'][:3]:
+            for pat in context['ltm_patterns'][:5]:  # Top 5 patterns
                 lines.append(f"  - {pat['concept']} (strength: {pat['strength']:.2f})")
         
         # Neighbors/exits
